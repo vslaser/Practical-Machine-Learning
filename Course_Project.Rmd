@@ -1,0 +1,140 @@
+---
+title: "Practical Machine Learning Course Project - Weight Lifting Exercise Classfication"
+author: "Vijay Shankar"
+date: "January 18, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+In this project, the goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to predict the manner in which the subjects did weightlifting exercise. The participants were asked to perform barbell lifts correctly and incorrectly in 5 different ways. This report describes how I built my model, how I used cross validation, the expected out of sample error, and why I made the choices I did. The report also uses the  prediction model to predict 20 different test cases.
+
+## Data Gathering and Cleaning
+
+The first step is to load the required packages and to read the data.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+setwd("D:\\DataScienceCoursera\\Practical Machine Learning")
+
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(RColorBrewer)
+library(rattle)
+library(ggplot2)
+
+
+# Reading data
+train_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(url=train_url, destfile="training.csv")
+
+test_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(url=test_url, destfile="testing.csv")
+
+train <- read.csv("training.csv", na.strings=c("NA","#DIV/0!",""))
+test <- read.csv("testing.csv", na.strings=c("NA","#DIV/0!",""))
+
+str(train)
+summary(train)
+summary(train$classe)
+```
+
+One of the key objectives of the project is to calculate the out of sample error. In order to do this, let us split the training data set randomly into 2 parts.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+set.seed(100)
+inTrain <- createDataPartition(y=train$classe, p=0.7, list=F)
+train1 <- train[inTrain, ]
+train2 <- train[-inTrain, ]
+```
+
+Part of data cleaning for this project would be to remove near zero variance variables, varibles with excessive NAs and those that we will not need based on out understanding of the underlying data set.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+# remove variables with nearly zero variance
+nzv <- nearZeroVar(train1)
+train1 <- train1[, -nzv]
+train2 <- train2[, -nzv]
+
+# remove variables that are almost always NA
+NAs <- sapply(train1, function(x) mean(is.na(x))) > 0.95
+train1 <- train1[, NAs==F]
+train2 <- train2[, NAs==F]
+
+# remove variables that don't make intuitive sense for prediction (X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp), which happen to be the first five variables
+train1 <- train1[, -(1:5)]
+train2 <- train2[, -(1:5)]
+```
+
+## Model Building
+Since we are trying to predict whether or not the exercise was performed properly, this is a classification problem. Let us start with Random Forests method to build a model.For optimal tuning of parameters, let us use 3-fold cross-validation.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+# instruct train to use 3-fold Cross Validation to select optimal tuning. I tried 5 fold and 2 fold as well but there was not much of a difference between the 3 and i chose 3 fold cross validation. 
+crossvalidate <- trainControl(method="cv", number=3, verboseIter=F)
+
+# fit model on train1
+fit <- train(classe ~ ., data=train1, method="rf", trControl=crossvalidate)
+
+# Lets see how the model works
+fit$finalModel
+```
+The estimated rate of error is 0.2% which is a good result. We will now evaluate the model against the remaining training data to calculate the out of sample error
+
+## Model Evaluation
+
+Let us perform the predictions using the model  "fit" and the remaining training data (train2).
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+
+prediction <- predict(fit, newdata=train2)
+
+# Confusion Matrix to get estimate of out-of-sample error
+confusionMatrix(train2$classe, prediction)
+```
+The confusion matrix has revealed that with the model "fit" and data set "train2" the accuracy is 99.8% and hence the out of sample error is 0.2%. I am satisfied with the result and hence would not go for ensembling. 
+
+## Model Training
+
+Up until now, we have not trained the model on full dataset. Let us do that now before using it to make predictions.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+nzv <- nearZeroVar(train)
+train <- train[, -nzv]
+test <- test[, -nzv]
+
+NAs <- sapply(train, function(x) mean(is.na(x))) > 0.95
+train <- train[, NAs==F]
+test <- test[, NAs==F]
+
+train <- train[, -(1:5)]
+test <- test[, -(1:5)]
+
+crossvalidate <- trainControl(method="cv", number=3, verboseIter=F)
+fit <- train(classe ~ .,data = train, method="rf", trControl=crossvalidate)
+
+fit$finalModel
+```
+The error rate is still only 0.13%. Let us use the model to predict the variable "classe" in test data set.
+
+## Predictions (Looking through the glass ball)
+Let us now predict the output and create a data frame with predictions.I will then write the predictions into a separate output file.
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+predictions <- predict(fit, newdata=test)
+
+test$classepredictions <- predictions
+
+Output <- data.frame(Problem_ID = test$problem_id,Predictions = test$classepredictions)
+
+write.csv(Output, "Output.csv")
+```
+
+
+
+
+
